@@ -8,16 +8,54 @@ import aiohttp
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
 import discord
+from discord.ext import tasks, commands
 from discord import app_commands
-from discord.ext import commands
 from datetime import datetime
 
-TOKEN = "YOUR_DISCORD_BOT_TOKEN_HERE"
+TOKEN = "YOUR_BOT_TOKEN"
 GUILD_ID = None
 MAX_PAGES = 150
 CONCURRENT = 8
 TIMEOUT = 20
 USER_AGENT = "CleanX-SiteGrabber/1.0"
+
+intents = discord.Intents.default()
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+notes = [
+    "Made By CleanX",
+    "Fuckin' Websites Extractor",
+    "Repository: https://github.com/CleanX/SiteGrabber"
+]
+note_index = 0
+
+@bot.event
+async def on_ready():
+    print(f"✅ Logged in as {bot.user} ({bot.user.id})")
+    change_status.start()
+    try:
+        if GUILD_ID:
+            guild = discord.Object(id=GUILD_ID)
+            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.sync(guild=guild)
+        else:
+            await bot.tree.sync()
+        print("✅ Slash commands synced")
+    except Exception as e:
+        print("❌ Sync failed:", e)
+
+@tasks.loop(seconds=3)
+async def change_status():
+    global note_index
+    note = notes[note_index]
+    activity = discord.Streaming(
+        name=f"/7wy | {note}",
+        url="https://twitch.tv/cleanx"
+    )
+    await bot.change_presence(activity=activity)
+    note_index = (note_index + 1) % len(notes)
+
 
 def safe_path_for_url(base_folder: str, url: str, domain: str):
     parsed = urlparse(url)
@@ -36,6 +74,7 @@ def safe_path_for_url(base_folder: str, url: str, domain: str):
 
 def sanitize_filename(name: str):
     return re.sub(r'[^A-Za-z0-9\-\._]', '_', name)
+
 
 class SiteGrabber:
     def __init__(self, base_url: str, session: aiohttp.ClientSession, out_folder="sites"):
@@ -107,19 +146,15 @@ class SiteGrabber:
         except Exception:
             return
         tags = []
-        tags += [("img", "src"), ("script", "src"), ("link", "href"), ("source", "src"), ("video", "poster"), ("audio", "src")]
-        tasks = []
+        tags += [("img", "src"), ("script", "src"), ("link", "href"),
+                 ("source", "src"), ("video", "poster"), ("audio", "src")]
+        jobs = []
         for tag, attr in tags:
             for t in soup.find_all(tag):
                 link = t.get(attr)
                 if not link:
                     continue
-                link_abs = self.absolutify(link, page_url)
-                if not link_abs:
-                    continue
-                parsed = urlparse(link_abs)
-                if parsed.netloc == "" or parsed.netloc == self.base_domain:
-                    tasks.append(self.handle_asset(link, page_url))
+                jobs.append(self.handle_asset(link, page_url))
         for a in soup.find_all("a", href=True):
             href = a["href"]
             abs_href = self.absolutify(href, page_url)
@@ -132,8 +167,8 @@ class SiteGrabber:
                 abs_href, _ = urldefrag(abs_href)
                 if abs_href not in self.seen_pages and self.to_visit.qsize() + len(self.seen_pages) < MAX_PAGES:
                     await self.to_visit.put(abs_href)
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        if jobs:
+            await asyncio.gather(*jobs, return_exceptions=True)
 
     async def save_page(self, page_url: str, content: bytes):
         fullpath = safe_path_for_url(self.out_folder, page_url, self.base_domain)
@@ -170,6 +205,7 @@ class SiteGrabber:
             if ctype and "text/html" in ctype:
                 await self.parse_and_queue(data, page)
 
+
 async def upload_to_mediafire(zip_path):
     async with aiohttp.ClientSession() as s:
         async with s.get("https://www.mediafire.com/") as r:
@@ -188,20 +224,6 @@ async def upload_to_mediafire(zip_path):
         quickkey = m2.group(1)
         return f"https://www.mediafire.com/file/{quickkey}"
 
-intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-@bot.event
-async def on_ready():
-    try:
-        if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-        else:
-            await bot.tree.sync()
-    except Exception as e:
-        print("Sync failed:", e)
 
 @bot.tree.command(name="7wy", description="Download a website project and zip it.")
 @app_commands.describe(url="Website URL")
@@ -228,7 +250,7 @@ async def grab(interaction: discord.Interaction, url: str):
     elapsed = result["elapsed"]
     pages = result["pages_count"]
     assets = result["assets_count"]
-    embed = discord.Embed(title="Site Grab Complete", color=0x00ff99)
+    embed = discord.Embed(title="✅ Site Grab Complete", color=0x00ff99)
     embed.add_field(name="Domain", value=grabber.base_domain, inline=True)
     embed.add_field(name="Pages", value=str(pages), inline=True)
     embed.add_field(name="Assets", value=str(assets), inline=True)
@@ -247,6 +269,7 @@ async def grab(interaction: discord.Interaction, url: str):
             await interaction.followup.send(embed=embed, content=f"Uploaded to MediaFire: {link}")
         else:
             await interaction.followup.send(embed=embed, content="Zip too big and upload failed.")
+
 
 if __name__ == "__main__":
     os.makedirs("sites", exist_ok=True)
